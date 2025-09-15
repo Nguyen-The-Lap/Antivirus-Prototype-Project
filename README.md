@@ -546,39 +546,4 @@ Special thanks to:
   <p>Made with ❤️ by the Python Antivirus Team</p>
 </div>
 
-<style>
-  /* Custom styling for better readability */
-  body {
-    line-height: 1.6;
-    color: #333;
-  }
-  h1, h2, h3, h4 {
-    color: #2c3e50;
-    margin-top: 1.5em;
-  }
-  code {
-    background: #f5f5f5;
-    padding: 2px 5px;
-    border-radius: 3px;
-    font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
-  }
-  pre {
-    background: #f8f9fa;
-    padding: 1em;
-    border-radius: 5px;
-    overflow-x: auto;
-  }
-  table {
-    border-collapse: collapse;
-    width: 100%;
-    margin: 1em 0;
-  }
-  th, td {
-    border: 1px solid #dee2e6;
-    padding: 0.75rem;
-    text-align: left;
-  }
-  th {
-    background-color: #f8f9fa;
-  }
-</style>
+
