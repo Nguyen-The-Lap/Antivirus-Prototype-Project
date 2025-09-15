@@ -120,7 +120,8 @@ dmypy.json
 
 # Project specific
 data/*
-!data/.gitkeep
+!data/yara_rules/*.yara
+!data/yara_rules/*.yar
 
 # Logs
 *.log
