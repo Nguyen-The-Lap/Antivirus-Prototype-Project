@@ -1,0 +1,10 @@
+requests>=2.31.0
+colorama>=0.4.6
+yara-python>=4.2.3
+pefile>=2023.2.7
+python-magic>=0.4.27
+psutil>=5.9.5
+watchdog>=3.0.0
+pywin32>=306; sys_platform == 'win32'
+python-dotenv>=1.0.0
+pycryptodome>=3.18.0

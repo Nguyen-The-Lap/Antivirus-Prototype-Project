@@ -1,0 +1,48 @@
+version: '3.8'
+
+services:
+  antivirus:
+    build: .
+    container_name: antivirus
+    volumes:
+      - ./data:/app/data
+      - ./src:/app/src
+      - ./config:/app/config
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    # Uncomment the following lines to enable resource limits
+    # deploy:
+    #   resources:
+    #     limits:
+    #       cpus: '2'
+    #       memory: 2G
+    #     reservations:
+    #       cpus: '0.5'
+    #       memory: 512M
+
+  # Example: Database for storing scan results and logs
+  # db:
+  #   image: postgres:13
+  #   environment:
+  #     POSTGRES_USER: antivirus
+  #     POSTGRES_PASSWORD: your_secure_password
+  #     POSTGRES_DB: antivirus_db
+  #   volumes:
+  #     - postgres_data:/var/lib/postgresql/data/
+  #   ports:
+  #     - "5432:5432"
+
+  # Example: Web interface (future enhancement)
+  # web:
+  #   build: ./web
+  #   ports:
+  #     - "8000:8000"
+  #   depends_on:
+  #     - db
+  #   environment:
+  #     - DATABASE_URL=postgresql://antivirus:your_secure_password@db:5432/antivirus_db
+
+# Uncomment if using the database
+# volumes:
+#   postgres_data:
