@@ -6,7 +6,7 @@
   
   <p align="center">
     <a href="https://www.python.org/downloads/">
-      <img src="https://img.shields.io/badge/Python-3.8%2B-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python Version">
+      <img src="https://img.shields.io/badge/Python-3.13%2B-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python Version">
     </a>
     <a href="LICENSE">
       <img src="https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge" alt="License">
