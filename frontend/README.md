@@ -135,23 +135,4 @@ This project is licensed under the MIT License - see the [LICENSE](../LICENSE) f
 <div align="center">
   <p>Made with ❤️ by Nguyen The Lap</p>
   <p>⭐ Star this project on <a href="https://github.com/Nguyen-The-Lap/Antivirus-Prototype-Project">GitHub</a></p>
-</div>
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+
