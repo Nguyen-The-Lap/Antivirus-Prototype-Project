@@ -11,7 +11,7 @@
     <a href="LICENSE" style="text-decoration: none;">
       <img src="https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge" alt="License">
     </a>
-    <a href="https://github.com/Nguyen-The-Lap/Antivirus-Prototype-Project/actions" style="text-decoration: none;">
+    <a href="https://github.com/Nguyen-The-Lap/Cool/actions" style="text-decoration: none;">
       <img src="https://img.shields.io/github/actions/workflow/status/Nguyen-The-Lap/Antivirus-Prototype-Project/ci.yml?branch=main&style=for-the-badge" alt="Build Status">
     </a>
     <a href="https://codecov.io/gh/Nguyen-The-Lap/Antivirus-Prototype-Project" style="text-decoration: none;">
