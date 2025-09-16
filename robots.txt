@@ -1,0 +1,12 @@
+# robots.txt for Cool Antivirus Project
+# https://www.robotstxt.org/robotstxt.html
+
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /admin/
+Disallow: /private/
+Disallow: /tmp/
+
+# Sitemap location (update with your domain)
+Sitemap: https://github.com/Nguyen-The-Lap/Antivirus-Prototype-Project/sitemap.xml

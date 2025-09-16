@@ -2,12 +2,61 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0" />
+    <meta name="theme-color" content="#1a1a1a" />
+    
+    <!-- Primary Meta Tags -->
+    <title>Cool - Next-Gen Antivirus Protection</title>
+    <meta name="title" content="Cool - Next-Gen Antivirus Protection" />
+    <meta name="description" content="Advanced open-source antivirus with real-time protection, behavioral analysis, and cloud-based threat intelligence." />
+    <meta name="keywords" content="antivirus, cybersecurity, malware protection, virus scanner, open source security, cool antivirus" />
+    <meta name="author" content="Nguyen The Lap" />
+    <meta name="robots" content="index, follow" />
+    
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://github.com/Nguyen-The-Lap/Antivirus-Prototype-Project/" />
+    <meta property="og:title" content="Cool - Next-Gen Antivirus Protection" />
+    <meta property="og:description" content="Advanced open-source antivirus with real-time protection and behavioral analysis." />
+    <meta property="og:image" content="/og-image.jpg" />
+    
+    <!-- Twitter -->
+    <meta property="twitter:card" content="summary_large_image" />
+    <meta property="twitter:url" content="https://github.com/Nguyen-The-Lap/Antivirus-Prototype-Project/" />
+    <meta property="twitter:title" content="Cool - Next-Gen Antivirus Protection" />
+    <meta property="twitter:description" content="Advanced open-source antivirus with real-time protection and behavioral analysis." />
+    <meta property="twitter:image" content="/og-image.jpg" />
+    
+    <!-- Icons -->
+    <link rel="icon" type="image/png" href="/favicon.ico" sizes="32x32" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Vite + React + TS</title>
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    
+    <!-- PWA Support -->
+    <link rel="manifest" href="/site.webmanifest" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   </head>
   <body>
+    <noscript>
+      <div style="text-align: center; padding: 2rem; background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; border-radius: 4px; margin: 1rem;">
+        <h2>JavaScript is disabled</h2>
+        <p>This application requires JavaScript to function properly. Please enable JavaScript in your browser settings.</p>
+      </div>
+    </noscript>
+    
     <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+    
+    <!-- Performance optimization: Load critical scripts first -->
+    <script type="module" src="/src/main.tsx" async></script>
+    
+    <!-- Preconnect to external domains -->
+    <link rel="preconnect" href="https://api.virustotal.com" />
+    <link rel="preconnect" href="https://api.abuseipdb.com" />
+    
+    <!-- Load non-critical CSS asynchronously -->
+    <link rel="preload" href="/src/index.css" as="style" onload="this.onload=null;this.rel='stylesheet'" />
+    <noscript><link rel="stylesheet" href="/src/index.css" /></noscript>
   </body>
 </html>

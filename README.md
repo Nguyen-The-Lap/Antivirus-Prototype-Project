@@ -1,53 +1,58 @@
 <div align="center">
-  <img src="https://img.icons8.com/color/96/000000/security-checked.png" alt="Logo" width="80" height="80">
+  <img src="https://img.icons8.com/fluency/96/000000/shield.png" alt="Cool Logo" width="100" height="100">
   
-  <h1>Python Antivirus Prototype</h1>
-  <h3>Next-Generation Threat Detection & Prevention</h3>
+  <h1>Cool</h1>
+  <h3>⚡ Lightning-Fast Threat Protection</h3>
   
   <p align="center">
     <a href="https://www.python.org/downloads/">
-      <img src="https://img.shields.io/badge/Python-3.13%2B-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python Version">
+      <img src="https://img.shields.io/badge/Python-3.10%2B-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python Version">
     </a>
     <a href="LICENSE">
       <img src="https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge" alt="License">
     </a>
-    <a href="https://github.com/yourusername/antivirus/actions">
-      <img src="https://img.shields.io/github/actions/workflow/status/yourusername/antivirus/ci.yml?branch=main&style=for-the-badge" alt="Build Status">
+    <a href="https://github.com/Nguyen-The-Lap/Antivirus-Prototype-Project/actions">
+      <img src="https://img.shields.io/github/actions/workflow/status/Nguyen-The-Lap/Antivirus-Prototype-Project/ci.yml?branch=main&style=for-the-badge" alt="Build Status">
     </a>
-    <a href="https://codecov.io/gh/yourusername/antivirus">
-      <img src="https://img.shields.io/codecov/c/github/yourusername/antivirus?style=for-the-badge" alt="Code Coverage">
+    <a href="https://codecov.io/gh/Nguyen-The-Lap/Antivirus-Prototype-Project">
+      <img src="https://img.shields.io/codecov/c/github/Nguyen-The-Lap/Antivirus-Prototype-Project?style=for-the-badge" alt="Code Coverage">
     </a>
   </p>
   
   <p>
-    <a href="#features">Features</a> •
-    <a href="#installation">Installation</a> •
-    <a href="#usage">Usage</a> •
-    <a href="#documentation">Documentation</a> •
-    <a href="#contributing">Contributing</a>
+    <a href="#-features">Features</a> •
+    <a href="#-quick-start">Quick Start</a> •
+    <a href="#-usage">Usage</a> •
+    <a href="#-documentation">Docs</a> •
+    <a href="#-contributing">Contribute</a>
   </p>
   
   <hr>
 </div>
 
 <div align="center">
-  <h2>🔒 Enterprise-Grade Security for Modern Threats</h2>
-  <p>Python Antivirus Prototype delivers advanced protection against evolving cybersecurity challenges through a powerful combination of signature-based detection, behavioral analysis, and machine learning.</p>
+  <h2>❄️ Stay Cool, Stay Protected</h2>
+  <p>Cool delivers enterprise-grade security with a lightweight footprint. Our next-gen engine combines behavioral analysis, machine learning, and real-time threat intelligence to keep your systems safe.</p>
+  
+  [![Watch the video](https://img.youtube.com/vi/your-video-id/maxresdefault.jpg)](https://youtu.be/your-video-id)
 </div>
 
-## ✨ Key Features
+## ✨ Why Cool?
 
-### 🤖 Machine Learning-Powered Detection
+### 🚀 Blazing Fast Performance
+- **Lightweight** - Minimal system impact
+- **Parallel Processing** - Multi-threaded scanning
+- **Smart Caching** - Reduced scan times for known files
 
-Our antivirus leverages advanced machine learning to detect previously unseen threats with high accuracy. The ML system is designed to be both powerful and efficient.
+### 🛡️ Advanced Protection
+- **Behavioral Analysis** - Detects zero-day threats
+- **Real-time Monitoring** - Instant threat detection
+- **Cloud Intelligence** - Always up-to-date protection
 
-#### 🧠 ML Detection Features:
-
-- **File Analysis**: Extracts over 50 features from files including:
-  - PE header information
-  - Entropy analysis
-  - Section characteristics
-  - Import/export tables
+### 🔍 Smart Features
+- **AI-Powered** - Learns from new threats
+- **Custom Rules** - Create your own detection rules
+- **Detailed Reports** - Understand every threat
   - Resource usage patterns
 
 - **Model Architecture**:
@@ -58,16 +63,123 @@ Our antivirus leverages advanced machine learning to detect previously unseen th
 
 - **Continuous Learning**:
   - Model retraining pipeline
+
+## 🚀 Quick Start
+
+### Prerequisites
+- Python 3.10+
+- pip (Python package manager)
+
+### Installation
+
+```bash
+# Clone the repository
+git clone https://github.com/Nguyen-The-Lap/Antivirus-Prototype-Project.git
+cd Antivirus-Prototype-Project
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Install Cool
+pip install .
+```
+
+## 🛠️ Usage
+
+### Basic Scan
+```bash
+cool scan /path/to/scan
+```
+
+### Real-time Protection
+```bash
+cool monitor /path/to/watch
+```
+
+### Update Signatures
+```bash
+cool update
+```
+
+## 📊 Features in Detail
+
+### Real-time Monitoring
+- File system events tracking
+- Process behavior analysis
+- Network activity monitoring
+
+### Advanced Scanning
+- Quick scan for critical areas
+- Full system scan
+- Custom scan paths
+- Compressed file analysis
+
+### Threat Intelligence
+- Cloud-based threat feeds
+- Community-powered protection
+- Automatic signature updates
   - Performance monitoring
   - Automated drift detection
   - Feedback loop for false positives/negatives
 
-#### 🛠 ML Tools:
+## 🛠 Developer Guide
 
+### Project Structure
+```
+Cool/
+├── src/                    # Source code
+│   ├── antivirus/         # Core antivirus engine
+│   ├── cli/               # Command line interface
+│   └── web/               # Web dashboard (coming soon)
+├── tests/                 # Test suites
+├── docs/                  # Documentation
+└── scripts/               # Utility scripts
+```
+
+### Building from Source
 ```bash
-# Train a new ML model
-python scripts/train_ml_model.py --input data/processed/training_data.csv --output models/new_model.joblib
+# Clone the repository
+git clone https://github.com/Nguyen-The-Lap/Antivirus-Prototype-Project.git
+cd Antivirus-Prototype-Project
 
+# Set up a virtual environment
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install development dependencies
+pip install -r requirements-dev.txt
+
+# Install in development mode
+pip install -e .
+```
+
+## 🤝 Contributing
+
+We welcome contributions! Here's how you can help:
+
+1. 🐛 Report bugs by opening an issue
+2. 💡 Suggest new features
+3. 🛠 Submit pull requests
+4. 📖 Improve documentation
+
+Please read our [Contributing Guide](CONTRIBUTING.md) for details.
+
+## 📜 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 🙏 Acknowledgments
+
+- Thanks to all contributors who have helped make Cool better
+- Built with ❤️ by the security community
+- Icons by [Icons8](https://icons8.com)
+
+---
+
+<div align="center">
+  <p>Made with ❤️ by Nguyen The Lap</p>
+  <p>⭐ Star this project on <a href="https://github.com/Nguyen-The-Lap/Antivirus-Prototype-Project">GitHub</a></p>
+</div>
 # Scan files using ML detection
 python -m antivirus.cli.ml_commands scan --input /path/to/scan --recursive
 
