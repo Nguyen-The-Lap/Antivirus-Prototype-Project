@@ -1,4 +1,4 @@
-""
+"""
 Command-line interface for the Advanced Antivirus Scanner.
 """
 import argparse
@@ -293,7 +293,7 @@ class AntivirusCLI:
         
         # Quarantine status
         quarantine_size = sum(f.stat().st_size for f in Path('data/quarantine').rglob('*') if f.is_file())
-        quarantine_count = sum(1 for _ in Path('data/quarantine').rglob('*') if f.is_file())
+        quarantine_count = sum(1 for f in Path('data/quarantine').rglob('*') if f.is_file())
         
         print(f"\n{Fore.CYAN}=== Quarantine ==={Style.RESET_ALL}")
         print(f"Files: {quarantine_count}")
