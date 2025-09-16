@@ -1,3 +1,7 @@
+"""
+Advanced Antivirus Engine with real-time monitoring and ML-based detection.
+"""
+
 import os
 import hashlib
 import datetime
@@ -14,16 +18,21 @@ import yara
 import pefile
 import magic
 import requests
-from typing import List, Dict, Tuple, Optional, Callable, Set
-from dataclasses import dataclass, field
+import logging
+from typing import List, Dict, Tuple, Optional, Callable, Set, Any, Union
+from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from colorama import init, Fore, Style
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from watchdog.observers import Observer
-from watchdog.events import FileSystemEventHandler
+
+# Import internal modules
+from ..ml.advanced_threat_detector import AdvancedThreatDetector
+from .realtime_monitor import RealTimeMonitor
+from ..utils.logger import get_logger
 
 @dataclass
 class ScanResult:
+    """Represents the result of a file scan."""
     file_path: str
     is_infected: bool = False
     threat_name: str = ""
@@ -32,878 +41,622 @@ class ScanResult:
     timestamp: str = field(default_factory=lambda: datetime.datetime.now().isoformat())
 
 class AdvancedAntivirusEngine:
-    def __init__(self):
+    """Advanced Antivirus Engine with real-time monitoring and ML-based detection."""
+    
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
+        """Initialize the antivirus engine.
+        
+        Args:
+            config: Optional configuration dictionary with the following keys:
+                - model_path: Path to the trained ML model
+                - quarantine_dir: Directory for quarantined files
+                - scan_log: Path to the scan log file
+                - monitored_dirs: List of directories to monitor in real-time
+                - scan_extensions: Set of file extensions to scan
+        """
+        # Initialize configuration
+        self.config = config or {}
+        
+        # Core components
         self.signatures = {}
         self.yara_rules = None
-        self.quarantine_dir = Path("quarantine").absolute()
-        self.scan_log = Path("scan_log.json").absolute()
-        self.suspicious_patterns = [
-            b'MZ',  # Windows executable
-            b'This program cannot be run in DOS mode',
-            b'CreateFile', 'ReadFile', 'WriteFile',  # Common API calls
-            b'http://', b'https://',  # Network connections
-            b'GetProcAddress', 'LoadLibrary',  # Dynamic loading
-        ]
-        self.suspicious_extensions = {
-            '.exe', '.dll', '.sys', '.bat', '.vbs',
-            '.ps1', '.js', '.jse', '.vbe', '.wsf',
-            '.wsh', '.msc', '.msi', '.msp', '.mst'
-        }
         self.whitelist = set()
-        self.running = True
         self.scan_queue = queue.Queue()
-        self.realtime_monitoring = False
-        self.monitored_dirs = set()
-        self.observer = None
+        self.running = True
+        
+        # File system paths
+        self.quarantine_dir = Path(self.config.get('quarantine_dir', 'quarantine')).absolute()
+        self.scan_log = Path(self.config.get('scan_log', 'scan_log.json')).absolute()
+        
+        # Real-time monitoring
+        self.realtime_monitor = None
+        self.monitored_dirs = set(self.config.get('monitored_dirs', []))
+        
+        # ML model
+        self.ml_model = None
+        self._init_ml_model()
+        
+        # Initialize directories and load data
         self._setup_directories()
         self._load_signatures()
         self._load_yara_rules()
         self._load_whitelist()
-        init()  # Initialize colorama
         
-    def _setup_directories(self):
-        """Create necessary directories if they don't exist"""
-        self.quarantine_dir.mkdir(exist_ok=True)
+        # Initialize logger
+        self.logger = get_logger(__name__)
         
-        # Create required subdirectories
-        (self.quarantine_dir / 'suspicious').mkdir(exist_ok=True)
-        (self.quarantine_dir / 'quarantined').mkdir(exist_ok=True)
-        (self.quarantine_dir / 'backup').mkdir(exist_ok=True)
-        
-        # Create signature directories
-        sig_dir = Path("signatures")
-        sig_dir.mkdir(exist_ok=True)
-        (sig_dir / 'yara').mkdir(exist_ok=True)
-        (sig_dir / 'hashes').mkdir(exist_ok=True)
+        # Initialize colorama for console output
+        init()
     
-    def _load_signatures(self):
-        """Load malware signatures from file"""
+    def _init_ml_model(self) -> None:
+        """Initialize the ML model if a model path is provided."""
+        model_path = self.config.get('model_path')
+        if model_path and Path(model_path).exists():
+            try:
+                self.ml_model = AdvancedThreatDetector(model_path=model_path)
+                self.logger.info(f"Loaded ML model from {model_path}")
+            except Exception as e:
+                self.logger.error(f"Failed to load ML model: {e}")
+        else:
+            self.logger.warning("No ML model path provided or model not found")
+    
+    def _setup_directories(self) -> None:
+        """Create necessary directories if they don't exist."""
+        try:
+            # Create quarantine directory and subdirectories
+            self.quarantine_dir.mkdir(exist_ok=True, parents=True)
+            (self.quarantine_dir / 'suspicious').mkdir(exist_ok=True)
+            (self.quarantine_dir / 'quarantined').mkdir(exist_ok=True)
+            (self.quarantine_dir / 'backup').mkdir(exist_ok=True)
+            
+            # Create signature directories
+            sig_dir = Path("signatures")
+            sig_dir.mkdir(exist_ok=True, parents=True)
+            (sig_dir / 'yara').mkdir(exist_ok=True)
+            (sig_dir / 'hashes').mkdir(exist_ok=True)
+            
+            # Create logs directory
+            logs_dir = Path("logs")
+            logs_dir.mkdir(exist_ok=True, parents=True)
+            
+            self.logger.info("Initialized required directories")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to setup directories: {e}")
+            raise
+    
+    def _load_signatures(self) -> None:
+        """Load malware signatures from file."""
         sig_file = Path("signatures/hashes/malware_hashes.json")
-        if sig_file.exists():
-            try:
-                with open(sig_file, 'r') as f:
+        try:
+            if sig_file.exists():
+                with open(sig_file, 'r', encoding='utf-8') as f:
                     self.signatures = json.load(f)
-            except json.JSONDecodeError:
+                self.logger.info(f"Loaded {len(self.signatures)} malware signatures")
+            else:
+                self.logger.warning("No malware signatures file found")
                 self.signatures = {}
+        except json.JSONDecodeError as e:
+            self.logger.error(f"Error parsing signatures file: {e}")
+            self.signatures = {}
+        except Exception as e:
+            self.logger.error(f"Error loading signatures: {e}")
+            self.signatures = {}
     
-    def _load_yara_rules(self):
-        """Compile and load YARA rules"""
+    def _load_yara_rules(self) -> None:
+        """Compile and load YARA rules."""
         yara_dir = Path("signatures/yara")
-        if yara_dir.exists() and any(yara_dir.iterdir()):
-            try:
-                yara_rules = []
-                for rule_file in yara_dir.glob('*.yar'):
-                    yara_rules.append(str(rule_file))
+        try:
+            if yara_dir.exists() and any(yara_dir.iterdir()):
+                yara_rules = list(yara_dir.glob('*.yar'))
                 if yara_rules:
                     self.yara_rules = yara.compile(filepaths={
                         f'rule_{i}': str(rule) for i, rule in enumerate(yara_rules)
                     })
-            except yara.Error as e:
-                print(f"Error loading YARA rules: {e}")
+                    self.logger.info(f"Loaded {len(yara_rules)} YARA rules")
+                else:
+                    self.logger.warning("No YARA rules found in the signatures directory")
+            else:
+                self.logger.warning("YARA rules directory not found or empty")
+        except yara.Error as e:
+            self.logger.error(f"Error compiling YARA rules: {e}")
+            self.yara_rules = None
+        except Exception as e:
+            self.logger.error(f"Error loading YARA rules: {e}")
+            self.yara_rules = None
     
-    def _load_whitelist(self):
-        """Load whitelisted files/directories"""
+    def _load_whitelist(self) -> None:
+        """Load whitelisted files/directories."""
         whitelist_file = Path("whitelist.txt")
-        if whitelist_file.exists():
-            with open(whitelist_file, 'r') as f:
-                self.whitelist = {line.strip() for line in f if line.strip()}
+        try:
+            if whitelist_file.exists():
+                with open(whitelist_file, 'r', encoding='utf-8') as f:
+                    self.whitelist = {line.strip() for line in f if line.strip()}
+                self.logger.info(f"Loaded {len(self.whitelist)} whitelist entries")
+            else:
+                self.logger.warning("No whitelist file found")
+                self.whitelist = set()
+        except Exception as e:
+            self.logger.error(f"Error loading whitelist: {e}")
+            self.whitelist = set()
     
-    def calculate_file_hash(self, file_path: Union[str, Path], hash_type: str = 'sha256') -> str:
-        """Calculate file hash using specified algorithm"""
-        file_path = Path(file_path)
-        if not file_path.is_file():
-            return ""
-            
-        hash_func = {
-            'md5': hashlib.md5,
-            'sha1': hashlib.sha1,
-            'sha256': hashlib.sha256,
-            'sha512': hashlib.sha512
-        }.get(hash_type.lower(), hashlib.sha256)
+    def _calculate_file_hash(self, file_path: Union[str, Path]) -> str:
+        """Calculate the SHA-256 hash of a file.
         
-        h = hash_func()
+        Args:
+            file_path: Path to the file to hash.
+            
+        Returns:
+            Hex string of the SHA-256 hash.
+        """
+        file_path = Path(file_path)
+        sha256_hash = hashlib.sha256()
         try:
             with file_path.open('rb') as f:
                 for chunk in iter(lambda: f.read(4096), b""):
-                    h.update(chunk)
-            return h.hexdigest()
+                    sha256_hash.update(chunk)
+            return sha256_hash.hexdigest()
         except (IOError, PermissionError) as e:
-            print(f"{Fore.RED}Error calculating hash for {file_path}: {e}{Style.RESET_ALL}")
+            self.logger.error(f"Error calculating hash for {file_path}: {e}")
             return ""
-
-    def scan_file(self, file_path: Union[str, Path]) -> ScanResult:
-        """Scan a single file for threats using multiple detection methods"""
-        file_path = Path(file_path)
-        result = ScanResult(file_path=str(file_path))
+    
+    def _scan_with_yara(self, file_path: Union[str, Path]) -> List[str]:
+        """Scan a file using YARA rules.
         
-        if not file_path.exists():
-            result.details = "File not found"
-            return result
+        Args:
+            file_path: Path to the file to scan.
             
-        # Skip whitelisted files
-        if str(file_path) in self.whitelist:
-            result.details = "File is whitelisted"
-            return result
+        Returns:
+            List of matched YARA rule names.
+        """
+        if not self.yara_rules:
+            return []
             
         try:
-            # 1. Check file hash against known malware
-            file_hash = self.calculate_file_hash(file_path)
-            if file_hash in self.signatures:
-                result.is_infected = True
-                result.threat_name = self.signatures[file_hash].get('name', 'Unknown')
-                result.threat_type = self.signatures[file_path].get('type', 'Virus')
-                result.details = f"Known malicious file: {result.threat_name}"
-                return result
-            
-            # 2. Check file extension against suspicious extensions
-            if file_path.suffix.lower() in self.suspicious_extensions:
-                result.details = f"Suspicious file extension: {file_path.suffix}"
-                result.threat_type = "Suspicious"
-            
-            # 3. Check file content for suspicious patterns
-            if self._check_suspicious_content(file_path):
-                result.is_infected = True
-                result.threat_type = "Heuristic"
-                result.details = "File contains suspicious patterns"
-                return result
-            
-            # 4. YARA rules scanning
-            if self.yara_rules:
-                try:
-                    matches = self.yara_rules.match(str(file_path))
-                    if matches:
-                        result.is_infected = True
-                        result.threat_name = ", ".join(m.rule for m in matches)
-                        result.threat_type = "YARA"
-                        result.details = f"YARA rule match: {result.threat_name}"
-                        return result
-                except Exception as e:
-                    print(f"{Fore.YELLOW}YARA scan error for {file_path}: {e}{Style.RESET_ALL}")
-            
-            # 5. PE file analysis for executables
-            if file_path.suffix.lower() in ['.exe', '.dll', '.sys']:
-                pe_result = self._analyze_pe_file(file_path)
-                if pe_result.is_infected:
-                    return pe_result
-            
-            # If we get here, the file appears clean
-            result.details = "File appears to be clean"
-            return result
-            
+            matches = self.yara_rules.match(str(file_path))
+            return [match.rule for match in matches]
         except Exception as e:
-            result.details = f"Scan error: {str(e)}"
-            return result
+            self.logger.error(f"YARA scan failed for {file_path}: {e}")
+            return []
     
-    def _check_suspicious_content(self, file_path: Path) -> bool:
-        """Check file content for suspicious patterns"""
-        try:
-            # Only check first 1MB of file for performance
-            with file_path.open('rb') as f:
-                content = f.read(1024 * 1024)
-                
-                # Check for suspicious strings
-                for pattern in self.suspicious_patterns:
-                    if isinstance(pattern, str):
-                        pattern = pattern.encode('utf-8')
-                    if pattern in content:
-                        return True
-                        
-                # Check for high entropy (potential packed/encrypted content)
-                if self._calculate_entropy(content) > 7.0:
-                    return True
-                    
-        except Exception:
-            pass
-            
-        return False
-    
-    def _calculate_entropy(self, data: bytes) -> float:
-        """Calculate the Shannon entropy of a byte string"""
-        if not data:
-            return 0.0
-            
-        entropy = 0.0
-        counter = {}
+    def _log_scan_result(self, result: ScanResult) -> None:
+        """Log the scan result to the scan log.
         
-        for byte in data:
-            counter[byte] = counter.get(byte, 0) + 1
-            
-        for count in counter.values():
-            p = count / len(data)
-            entropy -= p * (p and math.log(p, 2))
-            
-        return entropy
-    
-    def _analyze_pe_file(self, file_path: Path) -> ScanResult:
-        """Analyze PE (Portable Executable) files for suspicious characteristics"""
-        result = ScanResult(file_path=str(file_path))
-        
+        Args:
+            result: ScanResult object to log.
+        """
         try:
-            pe = pefile.PE(str(file_path), fast_load=True)
-            
-            # Check for common malware characteristics
-            suspicious_sections = [
-                '.text', '.rdata', '.data', '.rsrc', '.reloc',
-                '.crt', '.tls', '.pdata', '.didat', '.edata',
-                '.idata', '.msvcjme', '.ndata'
-            ]
-            
-            for section in pe.sections:
-                section_name = section.Name.decode('utf-8', 'ignore').strip('\x00')
-                if section_name not in suspicious_sections:
-                    result.is_infected = True
-                    result.threat_type = "PE Analysis"
-                    result.details = f"Suspicious section name: {section_name}"
-                    return result
-                
-                # Check section characteristics
-                if section.Characteristics & 0xE0000020:  # EXECUTE | READ | WRITE
-                    result.is_infected = True
-                    result.threat_type = "PE Analysis"
-                    result.details = "Suspicious section permissions (RWX)"
-                    return result
-            
-            # Check imports for suspicious APIs
-            suspicious_imports = {
-                'kernel32.dll': ['CreateRemoteThread', 'WriteProcessMemory', 'LoadLibraryA'],
-                'advapi32.dll': ['RegSetValueExA', 'RegSetValueExW'],
-                'ws2_32.dll': ['socket', 'connect', 'send', 'recv']
+            log_entry = {
+                'timestamp': result.timestamp,
+                'file_path': result.file_path,
+                'is_infected': result.is_infected,
+                'threat_name': result.threat_name,
+                'threat_type': result.threat_type,
+                'details': result.details
             }
             
-            if hasattr(pe, 'DIRECTORY_ENTRY_IMPORT'):
-                for entry in pe.DIRECTORY_ENTRY_IMPORT:
-                    dll_name = entry.dll.decode('utf-8').lower()
-                    for imp in entry.imports:
-                        if imp.name:
-                            func_name = imp.name.decode('utf-8')
-                            if dll_name in suspicious_imports and func_name in suspicious_imports[dll_name]:
-                                result.is_infected = True
-                                result.threat_type = "PE Analysis"
-                                result.details = f"Suspicious import: {dll_name}!{func_name}"
-                                return result
-            
-            # Check for packers/obfuscators
-            packers = self._detect_packers(pe)
-            if packers:
-                result.is_infected = True
-                result.threat_type = "Packer"
-                result.details = f"Possible packer detected: {', '.join(packers)}"
-                return result
-                
-        except Exception as e:
-            # If we can't parse the PE, it might be packed or corrupted
-            result.is_infected = True
-            result.threat_type = "PE Analysis"
-            result.details = f"Malformed PE file: {str(e)}"
-            return result
-            
-        return result
-    
-    def _detect_packers(self, pe) -> List[str]:
-        """Detect common packers and protectors"""
-        packers = []
-        
-        # Check section names
-        for section in pe.sections:
-            section_name = section.Name.decode('utf-8', 'ignore').strip('\x00')
-            if 'upx' in section_name.lower():
-                packers.append('UPX')
-            elif 'aspack' in section_name.lower():
-                packers.append('ASPack')
-            elif 'fsg' in section_name.lower():
-                packers.append('FSG')
-                
-        # Check entry point section name
-        if hasattr(pe, 'get_section_by_rva'):
-            try:
-                ep_section = pe.get_section_by_rva(pe.OPTIONAL_HEADER.AddressOfEntryPoint)
-                if ep_section:
-                    section_name = ep_section.Name.decode('utf-8', 'ignore').strip('\x00')
-                    if '.text' not in section_name and '.code' not in section_name:
-                        packers.append('Entry point in non-standard section')
-            except:
-                pass
-                
-        return list(set(packers))  # Remove duplicates
-    
-    def scan_directory(self, directory_path: Union[str, Path], recursive: bool = True, 
-                      max_workers: int = 4) -> Dict[str, Dict]:
-        """Scan all files in a directory with parallel processing"""
-        directory_path = Path(directory_path)
-        results = {}
-        
-        if not directory_path.exists():
-            return {"error": f"Directory not found: {directory_path}"}
-            
-        # Get all files to scan
-        files_to_scan = []
-        if recursive:
-            files_to_scan = [f for f in directory_path.rglob('*') if f.is_file()]
-        else:
-            files_to_scan = [f for f in directory_path.iterdir() if f.is_file()]
-        
-        # Process files in parallel
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            future_to_file = {
-                executor.submit(self.scan_file, file_path): file_path 
-                for file_path in files_to_scan
-            }
-            
-            for future in as_completed(future_to_file):
-                file_path = future_to_file[future]
-                try:
-                    result = future.result()
-                    results[str(file_path)] = {
-                        'infected': result.is_infected,
-                        'threat_name': result.threat_name,
-                        'threat_type': result.threat_type,
-                        'details': result.details,
-                        'timestamp': result.timestamp
-                    }
-                    
-                    # Log the result
-                    self._log_scan_result(result)
-                    
-                except Exception as e:
-                    results[str(file_path)] = {
-                        'error': str(e),
-                        'timestamp': datetime.datetime.now().isoformat()
-                    }
-        
-        return results
-    
-    def quarantine_file(self, file_path: Union[str, Path], move: bool = True) -> bool:
-        """Quarantine a suspicious file by moving or copying it to quarantine"""
-        file_path = Path(file_path)
-        if not file_path.exists():
-            return False
-            
-        try:
-            # Create quarantine directory if it doesn't exist
-            quarantine_dir = self.quarantine_dir / 'quarantined'
-            quarantine_dir.mkdir(parents=True, exist_ok=True)
-            
-            # Create a unique filename with timestamp and original path
-            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            safe_name = f"{timestamp}_{file_path.name}"
-            quarantine_path = quarantine_dir / safe_name
-            
-            # Create a backup before moving
-            backup_dir = self.quarantine_dir / 'backup'
-            backup_dir.mkdir(exist_ok=True)
-            backup_path = backup_dir / f"{timestamp}_{file_path.name}"
-            
-            try:
-                # Try to create a backup first
-                import shutil
-                shutil.copy2(file_path, backup_path)
-                
-                # Then move or copy the file
-                if move:
-                    shutil.move(file_path, quarantine_path)
-                else:
-                    shutil.copy2(file_path, quarantine_path)
-                    
-                # Log the quarantine action
-                with open(self.quarantine_dir / 'quarantine_log.txt', 'a') as log:
-                    log.write(f"{datetime.datetime.now().isoformat()}|{file_path}|{quarantine_path}\n")
-                
-                return True
-                
-            except Exception as e:
-                print(f"{Fore.RED}Error during quarantine operation: {e}{Style.RESET_ALL}")
-                # Try to restore from backup if move failed
-                if backup_path.exists() and not file_path.exists():
-                    shutil.move(backup_path, file_path)
-                return False
-                
-        except Exception as e:
-            print(f"{Fore.RED}Error quarantining file {file_path}: {e}{Style.RESET_ALL}")
-            return False
-    
-    def _log_scan_result(self, result: ScanResult):
-        """Log scan results to a JSON file"""
-        log_entry = {
-            'timestamp': result.timestamp,
-            'file_path': result.file_path,
-            'infected': result.is_infected,
-            'threat_name': result.threat_name,
-            'threat_type': result.threat_type,
-            'details': result.details
-        }
-        
-        try:
-            # Create log file if it doesn't exist
-            if not self.scan_log.exists():
-                with open(self.scan_log, 'w') as f:
-                    json.dump([], f)
+            # Ensure the log file exists
+            self.scan_log.parent.mkdir(parents=True, exist_ok=True)
             
             # Read existing logs
-            with open(self.scan_log, 'r+') as f:
+            logs = []
+            if self.scan_log.exists():
                 try:
-                    logs = json.load(f)
-                except json.JSONDecodeError:
+                    with open(self.scan_log, 'r', encoding='utf-8') as f:
+                        logs = json.load(f)
+                    if not isinstance(logs, list):
+                        logs = []
+                except (json.JSONDecodeError, Exception):
                     logs = []
-                
-                # Add new log entry
-                logs.append(log_entry)
-                
-                # Keep only the last 1000 entries
-                if len(logs) > 1000:
-                    logs = logs[-1000:]
-                
-                # Write back to file
-                f.seek(0)
+            
+            # Add new log entry
+            logs.append(log_entry)
+            
+            # Keep only the most recent 1000 entries
+            if len(logs) > 1000:
+                logs = logs[-1000:]
+            
+            # Write back to file
+            with open(self.scan_log, 'w', encoding='utf-8') as f:
                 json.dump(logs, f, indent=2)
-                f.truncate()
                 
         except Exception as e:
-            print(f"{Fore.RED}Error writing to log file: {e}{Style.RESET_ALL}")
+            self.logger.error(f"Failed to log scan result: {e}")
     
-    def start_realtime_monitoring(self, directories: List[Union[str, Path]]):
-        """Start real-time file system monitoring"""
-        if self.observer and self.observer.is_alive():
-            print(f"{Fore.YELLOW}Real-time monitoring is already running{Style.RESET_ALL}")
-            return
+    def scan_file(self, file_path: Union[str, Path]) -> ScanResult:
+        """Scan a single file for threats using multiple detection methods.
+        
+        The scanning process includes:
+        1. File existence and accessibility check
+        2. Whitelist check
+        3. Signature-based detection
+        4. YARA rule matching
+        5. ML-based detection (if ML model is available)
+        
+        Args:
+            file_path: Path to the file to scan.
             
-        class FileEventHandler(FileSystemEventHandler):
-            def __init__(self, callback):
-                self.callback = callback
-                
-            def on_created(self, event):
-                if not event.is_directory:
-                    self.callback(event.src_path)
-                    
-            def on_modified(self, event):
-                if not event.is_directory:
-                    self.callback(event.src_path)
+        Returns:
+            ScanResult object with the scan results.
+        """
+        file_path = Path(file_path).absolute()
+        result = ScanResult(file_path=str(file_path))
         
-        self.realtime_monitoring = True
-        self.observer = Observer()
-        
-        for directory in directories:
-            directory = Path(directory)
-            if directory.exists() and directory.is_dir():
-                self.monitored_dirs.add(str(directory))
-                self.observer.schedule(
-                    FileEventHandler(self._handle_realtime_event),
-                    str(directory),
-                    recursive=True
-                )
-        
-        if self.monitored_dirs:
-            self.observer.start()
-            print(f"{Fore.GREEN}Started real-time monitoring on: {', '.join(self.monitored_dirs)}{Style.RESET_ALL}")
-        else:
-            print(f"{Fore.YELLOW}No valid directories to monitor{Style.RESET_ALL}")
-    
-    def stop_realtime_monitoring(self):
-        """Stop real-time file system monitoring"""
-        if self.observer and self.observer.is_alive():
-            self.observer.stop()
-            self.observer.join()
-            self.realtime_monitoring = False
-            print(f"{Fore.GREEN}Stopped real-time monitoring{Style.RESET_ALL}")
-    
-    def _handle_realtime_event(self, file_path: str):
-        """Handle file system events in real-time"""
         try:
-            # Skip temporary files and system files
-            if any(x in file_path.lower() for x in ['~$', '.tmp', 'temp', 'tmp']):
-                return
+            # Check if file exists and is accessible
+            if not file_path.exists():
+                result.details = "File not found"
+                self.logger.warning(f"File not found: {file_path}")
+                return result
                 
             # Skip whitelisted files
-            if file_path in self.whitelist:
-                return
+            if str(file_path) in self.whitelist:
+                result.details = "File is whitelisted"
+                self.logger.debug(f"Skipping whitelisted file: {file_path}")
+                return result
                 
-            # Scan the file
-            result = self.scan_file(file_path)
+            # 1. Check file hash against known malware signatures
+            file_hash = self._calculate_file_hash(file_path)
+            if file_hash in self.signatures:
+                result.is_infected = True
+                result.threat_name = self.signatures[file_hash].get('threat_name', 'Unknown')
+                result.threat_type = 'SIGNATURE'
+                result.details = f"Matched known malware signature: {result.threat_name}"
+                self.logger.warning(f"Malware detected (signature): {file_path} - {result.threat_name}")
+                return result
+                
+            # 2. Check against YARA rules if available
+            if self.yara_rules:
+                yara_matches = self._scan_with_yara(file_path)
+                if yara_matches:
+                    result.is_infected = True
+                    result.threat_name = ", ".join(yara_matches)
+                    result.threat_type = 'YARA'
+                    result.details = f"Matched YARA rules: {', '.join(yara_matches)}"
+                    self.logger.warning(f"YARA rule match: {file_path} - {result.threat_name}")
+                    return result
             
-            # Take action if threat is detected
-            if result.is_infected:
-                print(f"{Fore.RED}ALERT: Malicious file detected: {file_path}{Style.RESET_ALL}")
-                print(f"Threat: {result.threat_name} ({result.threat_type})")
-                print(f"Details: {result.details}")
-                
-                # Auto-quarantine the file
-                if self.quarantine_file(file_path):
-                    print(f"{Fore.GREEN}File quarantined successfully{Style.RESET_ALL}")
-                else:
-                    print(f"{Fore.RED}Failed to quarantine file{Style.RESET_ALL}")
+            # 3. Use ML model for detection if available
+            if self.ml_model:
+                try:
+                    features = self.ml_model.extract_features(str(file_path))
+                    is_malicious, confidence = self.ml_model.predict(features)
                     
+                    if is_malicious:
+                        result.is_infected = True
+                        result.threat_name = f"ML.Detected (confidence: {confidence:.2f})"
+                        result.threat_type = 'ML'
+                        result.details = f"ML model detected potential malware with {confidence*100:.1f}% confidence"
+                        self.logger.warning(f"ML detection: {file_path} - {result.threat_name}")
+                        return result
+                        
+                except Exception as e:
+                    self.logger.error(f"ML detection failed for {file_path}: {e}", exc_info=True)
+            
+            # If we get here, the file appears to be clean
+            result.details = "No threats detected"
+            self.logger.debug(f"Clean file: {file_path}")
+            return result
+            
         except Exception as e:
-            print(f"{Fore.RED}Error handling real-time event: {e}{Style.RESET_ALL}")
+            error_msg = f"Error scanning {file_path}: {str(e)}"
+            self.logger.error(error_msg, exc_info=True)
+            result.details = f"Error: {str(e)}"
+            result.is_infected = False  # Default to not infected on error
+            return result
     
-    def update_signatures(self) -> bool:
-        """Update virus signatures from a remote source"""
+    def quarantine_file(self, file_path: Union[str, Path], threat_name: str = "") -> bool:
+        """Quarantine a potentially malicious file.
+        
+        Args:
+            file_path: Path to the file to quarantine.
+            threat_name: Name of the detected threat.
+            
+        Returns:
+            True if the file was quarantined successfully, False otherwise.
+        """
         try:
-            # In a real implementation, this would download signatures from a security provider
-            print(f"{Fore.CYAN}Updating virus signatures...{Style.RESET_ALL}")
-            
-            # Example: Download YARA rules from a repository
-            yara_url = "https://github.com/Yara-Rules/rules/archive/refs/heads/master.zip"
-            response = requests.get(yara_url, timeout=30)
-            
-            if response.status_code == 200:
-                # Extract and save YARA rules
-                import zipfile
-                import io
-                
-                with zipfile.ZipFile(io.BytesIO(response.content)) as zip_ref:
-                    zip_ref.extractall("signatures/yara")
-                
-                # Reload YARA rules
-                self._load_yara_rules()
-                
-                print(f"{Fore.GREEN}Virus signatures updated successfully{Style.RESET_ALL}")
-                return True
-            else:
-                print(f"{Fore.RED}Failed to download signatures: HTTP {response.status_code}{Style.RESET_ALL}")
+            file_path = Path(file_path)
+            if not file_path.exists():
+                self.logger.warning(f"File not found for quarantine: {file_path}")
                 return False
                 
+            # Create a unique filename for the quarantined file
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            safe_filename = f"{timestamp}_{file_path.name}"
+            quarantine_path = self.quarantine_dir / 'quarantined' / safe_filename
+            
+            # Move the file to quarantine
+            file_path.rename(quarantine_path)
+            
+            # Log the quarantine action
+            self.logger.info(f"Quarantined {file_path} as {quarantine_path}")
+            
+            # Create a backup of the file
+            backup_path = self.quarantine_dir / 'backup' / safe_filename
+            quarantine_path.link_to(backup_path)
+            
+            return True
+            
         except Exception as e:
-            print(f"{Fore.RED}Error updating signatures: {e}{Style.RESET_ALL}")
-            return False)
-
-
-def print_banner():
-    """Print the antivirus banner"""
-    banner = f"""
-    {Fore.CYAN}╔══════════════════════════════════════════════════╗
-    ║{Fore.WHITE}               ADVANCED ANTIVIRUS SCANNER           {Fore.CYAN}║
-    ║{Fore.WHITE}         Multi-Engine Threat Detection System        {Fore.CYAN}║
-    ╚══════════════════════════════════════════════════╝{Style.RESET_ALL}
-    """
-    print(banner)
-
-def print_menu():
-    """Print the main menu"""
-    menu = f"""
-    {Fore.CYAN}╔══════════════════════════════════════════════════╗
-    ║{Fore.WHITE}                   MAIN MENU                      {Fore.CYAN}║
-    ╠══════════════════════════════════════════════════╣
-    ║{Fore.WHITE} 1. Scan a file                                  {Fore.CYAN}║
-    ║{Fore.WHITE} 2. Scan a directory                             {Fore.CYAN}║
-    ║{Fore.WHITE} 3. Start real-time monitoring                   {Fore.CYAN}║
-    ║{Fore.WHITE} 4. Stop real-time monitoring                    {Fore.CYAN}║
-    ║{Fore.WHITE} 5. View scan log                                {Fore.CYAN}║
-    ║{Fore.WHITE} 6. Update virus signatures                      {Fore.CYAN}║
-    ║{Fore.WHITE} 7. Quarantine management                        {Fore.CYAN}║
-    ║{Fore.WHITE} 8. Exit                                        {Fore.CYAN}║
-    ╚══════════════════════════════════════════════════╝{Style.RESET_ALL}
-    """
-    print(menu)
-
-def clear_screen():
-    """Clear the terminal screen"""
-    os.system('cls' if os.name == 'nt' else 'clear')
-
-def print_status(message: str, status: str = "info"):
-    """Print a status message with color coding"""
-    colors = {
-        'info': Fore.CYAN,
-        'success': Fore.GREEN,
-        'warning': Fore.YELLOW,
-        'error': Fore.RED
-    }
-    print(f"{colors.get(status, Fore.WHITE)}[•] {message}{Style.RESET_ALL}")
-
-def main():
-    """Main entry point for the antivirus program"""
-    clear_screen()
-    print_banner()
+            self.logger.error(f"Failed to quarantine {file_path}: {e}")
+            return False
     
-    # Initialize the antivirus engine
-    try:
-        av = AdvancedAntivirusEngine()
-        print_status("Antivirus engine initialized successfully", "success")
-    except Exception as e:
-        print_status(f"Failed to initialize antivirus engine: {e}", "error")
-        return
-    
-    # Main loop
-    while True:
+    def start_realtime_monitoring(self, directories: Optional[List[Union[str, Path]]] = None) -> None:
+        """Start real-time monitoring of specified directories.
+        
+        Args:
+            directories: List of directories to monitor. If None, uses directories from config.
+        """
+        if directories:
+            self.monitored_dirs.update(str(Path(d).absolute()) for d in directories)
+        
+        if not self.monitored_dirs:
+            self.logger.warning("No directories specified for real-time monitoring")
+            return
+        
+        if self.realtime_monitor and self.realtime_monitor.is_alive():
+            self.logger.info("Real-time monitoring is already running")
+            return
+        
         try:
-            print_menu()
-            choice = input(f"{Fore.CYAN}Enter your choice (1-8): {Style.RESET_ALL}")
+            # Initialize the real-time monitor
+            self.realtime_monitor = RealTimeMonitor(
+                model_path=self.config.get('model_path'),
+                monitored_dirs=list(self.monitored_dirs),
+                callback=self._handle_scan_result,
+                scan_extensions=self.config.get('scan_extensions')
+            )
             
-            if choice == '1':  # Scan file
-                file_path = input("\nEnter the path to the file to scan: ").strip('"')
-                if not file_path:
-                    print_status("No file path provided", "warning")
-                    continue
-                    
-                print_status(f"\nScanning file: {file_path}")
-                start_time = time.time()
-                result = av.scan_file(file_path)
-                elapsed = time.time() - start_time
-                
-                if result.is_infected:
-                    print(f"\n{Fore.RED}╔══════════════════════════════════════════════════╗")
-                    print(f"║{' ' * 54}║")
-                    print(f"║{Fore.WHITE}  MALWARE DETECTED!{' ' * 35}{Fore.RED}║")
-                    print(f"║{' ' * 54}║")
-                    print(f"║{Fore.WHITE}  File: {file_path[:43]:<47}{Fore.RED}║")
-                    print(f"║{Fore.WHITE}  Threat: {result.threat_name:<45}{Fore.RED}║")
-                    print(f"║{Fore.WHITE}  Type: {result.threat_type:<47}{Fore.RED}║")
-                    print(f"║{Fore.WHITE}  Details: {result.details[:43]:<44}{Fore.RED}║")
-                    print(f"║{' ' * 54}║")
-                    print(f"║{Fore.WHITE}  Scan time: {elapsed:.2f} seconds{' ' * 29}{Fore.RED}║")
-                    print(f"║{' ' * 54}║")
-                    print(f"╚══════════════════════════════════════════════════╝{Style.RESET_ALL}")
-                    
-                    action = input(f"\n{Fore.YELLOW}Quarantine this file? (y/n): {Style.RESET_ALL}").lower()
-                    if action == 'y':
-                        if av.quarantine_file(file_path):
-                            print_status("File quarantined successfully", "success")
-                        else:
-                            print_status("Failed to quarantine file", "error")
-                else:
-                    print(f"\n{Fore.GREEN}╔══════════════════════════════════════════════════╗")
-                    print(f"║{' ' * 54}║")
-                    print(f"║{Fore.WHITE}  FILE IS CLEAN{' ' * 39}{Fore.GREEN}║")
-                    print(f"║{' ' * 54}║")
-                    print(f"║{Fore.WHITE}  File: {file_path[:43]:<47}{Fore.GREEN}║")
-                    print(f"║{Fore.WHITE}  Details: {result.details[:43]:<44}{Fore.GREEN}║")
-                    print(f"║{Fore.WHITE}  Scan time: {elapsed:.2f} seconds{' ' * 29}{Fore.GREEN}║")
-                    print(f"║{' ' * 54}║")
-                    print(f"╚══════════════════════════════════════════════════╝{Style.RESET_ALL}")
-                
-            elif choice == '2':  # Scan directory
-                dir_path = input("\nEnter the directory path to scan: ").strip('"')
-                if not dir_path:
-                    print_status("No directory path provided", "warning")
-                    continue
-                    
-                recursive = input("Scan subdirectories? (y/n): ").lower() == 'y'
-                max_workers = input("Enter number of parallel scans (default 4): ")
-                max_workers = int(max_workers) if max_workers.isdigit() else 4
-                
-                print_status(f"\nScanning directory: {dir_path}")
-                if recursive:
-                    print_status("Recursive scan: ENABLED")
-                else:
-                    print_status("Recursive scan: DISABLED")
-                print_status(f"Parallel workers: {max_workers}")
-                
-                start_time = time.time()
-                results = av.scan_directory(dir_path, recursive=recursive, max_workers=max_workers)
-                elapsed = time.time() - start_time
-                
-                # Count results
-                total_files = len(results)
-                infected_files = sum(1 for r in results.values() if r.get('infected', False))
-                
-                print(f"\n{Fore.CYAN}╔══════════════════════════════════════════════════╗")
-                print(f"║{' ' * 54}║")
-                print(f"║{Fore.WHITE}  SCAN COMPLETE{' ' * 39}{Fore.CYAN}║")
-                print(f"║{' ' * 54}║")
-                print(f"║{Fore.WHITE}  Directory: {dir_path[:42]:<41}{Fore.CYAN}║")
-                print(f"║{Fore.WHITE}  Files scanned: {total_files:<37}{Fore.CYAN}║")
-                print(f"║{Fore.RED}  Threats found: {infected_files:<37}{Fore.CYAN}║")
-                print(f"║{Fore.WHITE}  Scan time: {elapsed:.2f} seconds{' ' * 29}{Fore.CYAN}║")
-                print(f"║{' ' * 54}║")
-                print(f"╚══════════════════════════════════════════════════╝{Style.RESET_ALL}")
-                
-                if infected_files > 0:
-                    action = input(f"\n{Fore.YELLOW}View detailed results? (y/n): {Style.RESET_ALL}").lower()
-                    if action == 'y':
-                        for file, result in results.items():
-                            if result.get('infected', False):
-                                print(f"\n{Fore.RED}Threat found:{Style.RESET_ALL}")
-                                print(f"File: {file}")
-                                print(f"Threat: {result.get('threat_name', 'Unknown')}")
-                                print(f"Type: {result.get('threat_type', 'Unknown')}")
-                                print(f"Details: {result.get('details', 'No details')}")
-                
-            elif choice == '3':  # Start real-time monitoring
-                paths = input("\nEnter directories to monitor (comma-separated): ").strip('"')
-                if not paths:
-                    print_status("No directories provided", "warning")
-                    continue
-                    
-                directories = [p.strip() for p in paths.split(',') if p.strip()]
-                av.start_realtime_monitoring(directories)
-                
-            elif choice == '4':  # Stop real-time monitoring
-                av.stop_realtime_monitoring()
-                
-            elif choice == '5':  # View scan log
-                try:
-                    with open(av.scan_log, 'r') as f:
-                        logs = json.load(f)
-                        
-                    if not logs:
-                        print_status("Scan log is empty", "warning")
-                        continue
-                        
-                    print(f"\n{Fore.CYAN}╔══════════════════════════════════════════════════╗")
-                    print(f"║{' ' * 54}║")
-                    print(f"║{Fore.WHITE}  SCAN LOG ({len(logs)} entries){' ' * 34}{Fore.CYAN}║")
-                    print(f"╚══════════════════════════════════════════════════╝{Style.RESET_ALL}")
-                    
-                    for log in logs[-10:]:  # Show last 10 entries
-                        status = f"{Fore.RED}INFECTED" if log['infected'] else f"{Fore.GREEN}CLEAN"
-                        print(f"\n{status}{Style.RESET_ALL} - {log['timestamp']}")
-                        print(f"File: {log['file_path']}")
-                        if log['infected']:
-                            print(f"Threat: {log.get('threat_name', 'Unknown')} ({log.get('threat_type', 'Unknown')})")
-                        print(f"Details: {log.get('details', 'No details')}")
-                    
-                except FileNotFoundError:
-                    print_status("No scan log found", "warning")
-                except json.JSONDecodeError:
-                    print_status("Error reading scan log", "error")
-                
-            elif choice == '6':  # Update signatures
-                print_status("Updating virus signatures...")
-                if av.update_signatures():
-                    print_status("Virus signatures updated successfully", "success")
-                else:
-                    print_status("Failed to update virus signatures", "error")
-                    
-            elif choice == '7':  # Quarantine management
-                self._show_quarantine_menu(av)
-                
-            elif choice == '8':  # Exit
-                if hasattr(av, 'realtime_monitoring') and av.realtime_monitoring:
-                    av.stop_realtime_monitoring()
-                print_status("Exiting...", "info")
-                break
-                
-            else:
-                print_status("Invalid choice. Please try again.", "warning")
-                
-            input("\nPress Enter to continue...")
-            clear_screen()
-            
-        except KeyboardInterrupt:
-            print("\n")
-            if input("Do you want to exit? (y/n): ").lower() == 'y':
-                if hasattr(av, 'realtime_monitoring') and av.realtime_monitoring:
-                    av.stop_realtime_monitoring()
-                break
-            clear_screen()
+            # Start monitoring
+            self.realtime_monitor.start()
+            self.logger.info(f"Started real-time monitoring on {len(self.monitored_dirs)} directories")
             
         except Exception as e:
-            print_status(f"An error occurred: {e}", "error")
-            import traceback
-            traceback.print_exc()
-            input("\nPress Enter to continue...")
-            clear_screen()
-
-def _show_quarantine_menu(self, av):
-    """Display the quarantine management menu"""
-    while True:
-        print(f"\n{Fore.CYAN}╔══════════════════════════════════════════════════╗")
-        print(f"║{Fore.WHITE}               QUARANTINE MANAGEMENT             {Fore.CYAN}║")
-        print(f"╠══════════════════════════════════════════════════╣")
-        print(f"║{Fore.WHITE} 1. View quarantined files                      {Fore.CYAN}║")
-        print(f"║{Fore.WHITE} 2. Restore file from quarantine                {Fore.CYAN}║")
-        print(f"║{Fore.WHITE} 3. Delete quarantined file                     {Fore.CYAN}║")
-        print(f"║{Fore.WHITE} 4. Back to main menu                           {Fore.CYAN}║")
-        print(f"╚══════════════════════════════════════════════════╝{Style.RESET_ALL}")
-        
-        choice = input(f"{Fore.CYAN}Enter your choice (1-4): {Style.RESET_ALL}")
-        
-        if choice == '1':
-            self._list_quarantined_files(av)
-        elif choice == '2':
-            self._restore_quarantined_file(av)
-        elif choice == '3':
-            self._delete_quarantined_file(av)
-        elif choice == '4':
-            break
-        else:
-            print_status("Invalid choice. Please try again.", "warning")
-
-def _list_quarantined_files(self, av):
-    """List all files in quarantine"""
-    quarantine_dir = av.quarantine_dir / 'quarantined'
-    if not quarantine_dir.exists() or not any(quarantine_dir.iterdir()):
-        print_status("No files in quarantine", "info")
-        return
-        
-    print(f"\n{Fore.CYAN}╔══════════════════════════════════════════════════╗")
-    print(f"║{Fore.WHITE}              QUARANTINED FILES                {Fore.CYAN}║")
-    print(f"╠══════════════════════════════════════════════════╣")
+            self.logger.error(f"Failed to start real-time monitoring: {e}")
+            raise
     
-    for i, file_path in enumerate(quarantine_dir.iterdir(), 1):
-        print(f"║{Fore.WHITE} {i}. {file_path.name:<50}{Fore.CYAN}║")
-    
-    print(f"╚══════════════════════════════════════════════════╝{Style.RESET_ALL}")
-
-def _restore_quarantined_file(self, av):
-    """Restore a file from quarantine"""
-    quarantine_dir = av.quarantine_dir / 'quarantined'
-    if not quarantine_dir.exists() or not any(quarantine_dir.iterdir()):
-        print_status("No files in quarantine to restore", "info")
-        return
-        
-    self._list_quarantined_files(av)
-    
-    try:
-        file_num = int(input("\nEnter the number of the file to restore (0 to cancel): "))
-        if file_num == 0:
-            return
-            
-        files = list(quarantine_dir.iterdir())
-        if 1 <= file_num <= len(files):
-            file_to_restore = files[file_num - 1]
-            original_path = input("Enter the path to restore to (leave empty for original location): ").strip('"')
-            
-            if not original_path:
-                # Try to get original path from quarantine log
-                log_file = av.quarantine_dir / 'quarantine_log.txt'
-                if log_file.exists():
-                    with open(log_file, 'r') as f:
-                        for line in f:
-                            parts = line.strip().split('|')
-                            if len(parts) >= 3 and parts[2].endswith(file_to_restore.name):
-                                original_path = parts[1]
-                                break
-                
-                if not original_path:
-                    print_status("Original path not found in log. Please specify the restore path.", "warning")
-                    return
-            
+    def stop_realtime_monitoring(self) -> None:
+        """Stop real-time monitoring."""
+        if self.realtime_monitor:
             try:
-                import shutil
-                shutil.copy2(file_to_restore, original_path)
-                file_to_restore.unlink()  # Remove from quarantine
-                print_status(f"File restored to: {original_path}", "success")
+                self.realtime_monitor.stop()
+                self.logger.info("Stopped real-time monitoring")
             except Exception as e:
-                print_status(f"Failed to restore file: {e}", "error")
-        else:
-            print_status("Invalid file number", "error")
-    except ValueError:
-        print_status("Please enter a valid number", "error")
-
-def _delete_quarantined_file(self, av):
-    """Permanently delete a quarantined file"""
-    quarantine_dir = av.quarantine_dir / 'quarantined'
-    if not quarantine_dir.exists() or not any(quarantine_dir.iterdir()):
-        print_status("No files in quarantine to delete", "info")
-        return
-        
-    self._list_quarantined_files(av)
+                self.logger.error(f"Error stopping real-time monitoring: {e}")
     
-    try:
-        file_num = int(input("\nEnter the number of the file to delete (0 to cancel): "))
-        if file_num == 0:
-            return
+    def _handle_scan_result(self, file_path: str, result: Dict[str, Any]) -> None:
+        """Handle scan results from real-time monitoring with enhanced features.
+        
+        This method processes scan results, performs threat intelligence lookups,
+        handles rate limiting, and takes appropriate actions.
+        
+        Args:
+            file_path: Path to the scanned file.
+            result: Dictionary containing scan results with keys:
+                - is_malicious: bool indicating if the file is malicious
+                - threat_name: str name of the detected threat
+                - details: dict with additional scan details
+                - confidence: float confidence score (0-1)
+        """
+        try:
+            file_path = Path(file_path)
+            if not file_path.exists():
+                self.logger.warning(f"File no longer exists: {file_path}")
+                return
+                
+            # Skip files that were recently scanned to prevent duplicate processing
+            current_time = time.time()
+            if file_path in self._last_scan_times:
+                time_since_last_scan = current_time - self._last_scan_times[file_path]
+                if time_since_last_scan < 5:  # 5-second cooldown
+                    self.logger.debug(f"Skipping recently scanned file: {file_path}")
+                    return
+            self._last_scan_times[file_path] = current_time
             
-        files = list(quarantine_dir.iterdir())
-        if 1 <= file_num <= len(files):
-            file_to_delete = files[file_num - 1]
-            confirm = input(f"Are you sure you want to permanently delete {file_to_delete.name}? (y/n): ").lower()
-            if confirm == 'y':
-                try:
-                    file_to_delete.unlink()
-                    print_status("File permanently deleted", "success")
-                except Exception as e:
-                    print_status(f"Failed to delete file: {e}", "error")
-        else:
-            print_status("Invalid file number", "error")
-    except ValueError:
-        print_status("Please enter a valid number", "error")
+            # Check file size limit (100MB)
+            file_size = file_path.stat().st_size
+            if file_size > 100 * 1024 * 1024:  # 100MB
+                self.logger.warning(f"Skipping large file ({(file_size/1024/1024):.2f}MB): {file_path}")
+                return
+                
+            # Create a ScanResult object with enhanced details
+            file_hash = self._calculate_file_hash(file_path)
+            scan_result = ScanResult(
+                file_path=str(file_path),
+                is_infected=result.get('is_malicious', False),
+                threat_name=result.get('threat_name', ''),
+                threat_type=result.get('threat_type', 'UNKNOWN'),
+                details={
+                    'scan_details': result.get('details', {}),
+                    'file_size': file_size,
+                    'file_hash': file_hash,
+                    'last_modified': file_path.stat().st_mtime,
+                    'threat_intel': self._check_threat_intelligence(file_hash, str(file_path))
+                }
+            )
+            
+            # Log the result with more context
+            self._log_scan_result(scan_result)
+            
+            # Take action based on threat level
+            if scan_result.is_infected:
+                threat_level = self._assess_threat_level(scan_result)
+                self.logger.warning(
+                    f"{threat_level} threat detected: {file_path} - "
+                    f"{scan_result.threat_name} (Confidence: {result.get('confidence', 0.0):.1%})"
+                )
+                
+                # Take appropriate action based on threat level
+                if threat_level == "HIGH":
+                    quarantine_success = self.quarantine_file(
+                        file_path, 
+                        scan_result.threat_name,
+                        additional_metadata={
+                            'detection_time': datetime.datetime.now().isoformat(),
+                            'threat_level': threat_level,
+                            'confidence': result.get('confidence', 0.0)
+                        }
+                    )
+                    if quarantine_success:
+                        self._notify_user(
+                            "High Threat Contained",
+                            f"Malicious file quarantined: {file_path.name}\n"
+                            f"Threat: {scan_result.threat_name}\n"
+                            f"Location: {file_path}"
+                        )
+                else:
+                    self.logger.info(f"Monitoring potential threat: {file_path}")
+                    
+        except Exception as e:
+            self.logger.error(f"Error handling scan result for {file_path}: {e}", exc_info=True)
+            
+    def _check_threat_intelligence(self, file_hash: str, file_path: str) -> Dict[str, Any]:
+        """Check file hash against threat intelligence sources.
+        
+        Args:
+            file_hash: SHA-256 hash of the file
+            file_path: Path to the file for additional context
+            
+        Returns:
+            Dict containing threat intelligence data
+        """
+        # TODO: Implement actual threat intelligence API calls
+        # For now, return a mock response
+        return {
+            'known_malicious': file_hash in self.signatures,
+            'last_seen': datetime.datetime.now().isoformat(),
+            'reputation': 'malicious' if file_hash in self.signatures else 'unknown'
+        }
+        
+    def _assess_threat_level(self, scan_result: ScanResult) -> str:
+        """Determine the threat level based on scan results.
+        
+        Args:
+            scan_result: ScanResult object with detection details
+            
+        Returns:
+            str: Threat level (LOW, MEDIUM, HIGH)
+        """
+        # Simple heuristic - can be enhanced with more sophisticated logic
+        if scan_result.threat_type == 'SIGNATURE':
+            return 'HIGH'
+        elif scan_result.threat_type == 'YARA':
+            return 'MEDIUM' if 'suspicious' in scan_result.details.get('scan_details', {}) else 'HIGH'
+        elif scan_result.threat_type == 'ML':
+            confidence = scan_result.details.get('scan_details', {}).get('confidence', 0.0)
+            return 'HIGH' if confidence > 0.8 else 'MEDIUM' if confidence > 0.5 else 'LOW'
+        return 'LOW'
+        
+    def _notify_user(self, title: str, message: str, level: str = 'warning') -> None:
+        """Send a notification to the user.
+        
+        Args:
+            title: Notification title
+            message: Notification message
+            level: Notification level (info, warning, error)
+        """
+        try:
+            # On Windows, use toast notifications
+            if platform.system() == 'Windows':
+                from win10toast import ToastNotifier
+                toaster = ToastNotifier()
+                toaster.show_toast(
+                    title,
+                    message,
+                    icon_path=None,
+                    duration=10,
+                    threaded=True
+                )
+            # On Linux/macOS, use system notifications
+            else:
+                import subprocess
+                if platform.system() == 'Darwin':  # macOS
+                    subprocess.run(['osascript', '-e', f'display notification "{message}" with title "{title}"'])
+                else:  # Linux
+                    subprocess.run(['notify-send', title, message])
+                    
+            # Also log the notification
+            log_func = getattr(self.logger, level.lower(), self.logger.info)
+            log_func(f"[{title}] {message}")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to send notification: {e}")
+            
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
+        """Initialize the antivirus engine.
+        
+        Args:
+            config: Optional configuration dictionary with the following keys:
+                - model_path: Path to the trained ML model
+                - quarantine_dir: Directory for quarantined files
+                - scan_log: Path to the scan log file
+                - monitored_dirs: List of directories to monitor in real-time
+                - scan_extensions: Set of file extensions to scan
+        """
+        # Initialize configuration
+        self.config = config or {}
+        
+        # Core components
+        self.signatures = {}
+        self.yara_rules = None
+        self.whitelist = set()
+        self.scan_queue = queue.Queue()
+        self.running = True
+        self._last_scan_times = {}
+        
+        # File system paths
+        self.quarantine_dir = Path(self.config.get('quarantine_dir', 'quarantine')).absolute()
+        self.scan_log = Path(self.config.get('scan_log', 'scan_log.json')).absolute()
+        
+        # Real-time monitoring
+        self.realtime_monitor = None
+        self.monitored_dirs = set(self.config.get('monitored_dirs', []))
+        
+        # ML model
+        self.ml_model = None
+        self._init_ml_model()
+        
+        # Initialize directories and load data
+        self._setup_directories()
+        self._load_signatures()
+        self._load_yara_rules()
+        self._load_whitelist()
+        
+        # Initialize logger
+        self.logger = get_logger(__name__)
+        
+        # Initialize colorama for console output
+        init()
+    
+    def update_signatures(self) -> bool:
+        """Update malware signatures from a remote source.
+        
+        Returns:
+            True if the update was successful, False otherwise.
+        """
+        try:
+            # Example: Download signatures from a remote URL
+            sig_url = self.config.get('signature_url')
+            if not sig_url:
+                self.logger.warning("No signature URL configured")
+                return False
+                
+            response = requests.get(sig_url, timeout=30)
+            response.raise_for_status()
+            
+            # Save the signatures
+            sig_file = Path("signatures/hashes/malware_hashes.json")
+            sig_file.parent.mkdir(parents=True, exist_ok=True)
+            
+            with open(sig_file, 'w', encoding='utf-8') as f:
+                f.write(response.text)
+            
+            # Reload signatures
+            self._load_signatures()
+            self.logger.info("Successfully updated malware signatures")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Failed to update signatures: {e}")
+            return False
